@@ -611,13 +611,15 @@ CONTAINS
    SUBROUTINE dbcsr_t_crop(tensor_in, tensor_out, bounds, move_data)
       TYPE(dbcsr_t_type), INTENT(INOUT) :: tensor_in
       TYPE(dbcsr_t_type), INTENT(OUT) :: tensor_out
-      INTEGER, DIMENSION(2, ndims_tensor(tensor_in)), INTENT(IN) :: bounds
+      INTEGER, DIMENSION(:,:,:), INTENT(IN) :: bounds
+      ! DIMENSION(:,2,ndims_tensor(tensor_in)) :: bounds
+      !INTEGER, DIMENSION(2, ndims_tensor(tensor_in)), INTENT(IN) :: bounds
       LOGICAL, INTENT(IN), OPTIONAL :: move_data
-      INTEGER, DIMENSION(2, ndims_tensor(tensor_in)) :: blk_bounds
+      INTEGER, DIMENSION(SIZE(bounds, 1), 2, ndims_tensor(tensor_in)) :: blk_bounds
       TYPE(dbcsr_t_iterator_type)                     :: iter
       INTEGER, DIMENSION(ndims_tensor(tensor_in)) :: blk_index, blk_size, blk_offset
       LOGICAL :: found, move_data_prv
-      INTEGER :: idim, blk, iblk, iblk_all, nblk
+      INTEGER :: idim, blk, iblk, iblk_all, nblk, nbounds
       INTEGER, DIMENSION(:, :), ALLOCATABLE :: blk_ind, blk_ind_tmp
 #:for dparam, dtype, dsuffix in dtype_float_list
 #:for ndim in ndims
@@ -633,6 +635,8 @@ CONTAINS
 
       CALL dbcsr_t_create(tensor_in, tensor_out)
 
+      nbounds = SIZE(bounds,1)
+
       ! reserve blocks inside bounds
       ALLOCATE (blk_ind(dbcsr_t_get_num_blocks(tensor_in), ndims_tensor(tensor_in)))
       CALL dbcsr_t_reserved_block_indices(tensor_in, blk_ind)
@@ -644,8 +648,8 @@ CONTAINS
          CALL dbcsr_t_blk_offsets(tensor_in, blk_ind(iblk_all, :), blk_offset)
          CALL dbcsr_t_blk_sizes(tensor_in, blk_ind(iblk_all, :), blk_size)
          DO idim = 1, ndims_tensor(tensor_in)
-            IF (bounds(1, idim) > blk_offset(idim) - 1 + blk_size(idim)) CYCLE blk_loop
-            IF (bounds(2, idim) < blk_offset(idim)) CYCLE blk_loop
+            IF (ALL(bounds(:, 1, idim) > blk_offset(idim) - 1 + blk_size(idim))) CYCLE blk_loop
+            !IF (ALL(bounds(:, 2, idim) < blk_offset(idim))) CYCLE blk_loop
          ENDDO
          iblk = iblk + 1
          blk_ind_tmp(iblk, :) = blk_ind(iblk_all, :)
@@ -657,14 +661,21 @@ CONTAINS
 
       CALL dbcsr_t_reserve_blocks(tensor_out, blk_ind)
 
+
       ! copy blocks
       CALL dbcsr_t_iterator_start(iter, tensor_out)
       iter_loop: DO WHILE (dbcsr_t_iterator_blocks_left(iter))
          CALL dbcsr_t_iterator_next_block(iter, blk_index, blk, blk_size=blk_size, blk_offset=blk_offset)
+         blk_bounds(:,:,:) = 0
 
          DO idim = 1, ndims_tensor(tensor_in)
-            blk_bounds(1, idim) = MAX(bounds(1, idim) - blk_offset(idim) + 1, 1)
-            blk_bounds(2, idim) = MIN(bounds(2, idim) - blk_offset(idim) + 1, blk_size(idim))
+            DO ib = 1, nbounds
+               IF (bounds(ib, 1, idim) > blk_offset(idim) - 1 + blk_size(idim)) CYCLE
+               !IF (bounds(ib, 2, idim) < blk_offset(idim)) CYCLE
+
+               blk_bounds(ib, 1, idim) = MAX(bounds(1, idim) - blk_offset(idim) + 1, 1)
+               blk_bounds(ib, 2, idim) = MIN(bounds(2, idim) - blk_offset(idim) + 1, blk_size(idim))
+            END DO
          ENDDO
 
 #:for dprec, dparam, dtype, dsuffix in dtype_float_list_prec
@@ -672,15 +683,22 @@ CONTAINS
 #:for ndim in ndims
             IF (ndims_tensor(tensor_in) == ${ndim}$) THEN
                CALL dbcsr_t_get_block(tensor_in, blk_index, block_${dsuffix}$_${ndim}$d, found)
-
                CALL allocate_any(block_put_${dsuffix}$_${ndim}$d, blk_size)
                block_put_${dsuffix}$_${ndim}$d = 0.0_${dprec}$
-               block_put_${dsuffix}$_${ndim}$d(${", ".join(["blk_bounds(1, "+str(idim)+"):blk_bounds(2,"+str(idim)+")" for idim in range(1, ndim+1)])}$) = &
-                  block_${dsuffix}$_${ndim}$d(${", ".join(["blk_bounds(1, "+str(idim)+"):blk_bounds(2,"+str(idim)+")" for idim in range(1, ndim+1)])}$)
+
+               DO ib = 1, nbounds
+                  IF (blk_bounds(ib, 1, idim) == 0) CYCLE
+                  block_put_${dsuffix}$_${ndim}$d( &
+                  ${", ".join(["blk_bounds(ib, 1, "+str(idim)+"):blk_bounds(ib, 2,"+str(idim)+")" for idim in range(1, ndim+1)])}$ &
+                     ) = &
+                     block_${dsuffix}$_${ndim}$d( &
+                  ${", ".join(["blk_bounds(ib, 1, "+str(idim)+"):blk_bounds(ib, 2,"+str(idim)+")" for idim in range(1, ndim+1)])}$ &
+                     )
+               END DO
                CALL dbcsr_t_put_block(tensor_out, blk_index, blk_size, block_put_${dsuffix}$_${ndim}$d)
                DEALLOCATE (block_${dsuffix}$_${ndim}$d)
                DEALLOCATE (block_put_${dsuffix}$_${ndim}$d)
-            ENDIF
+            END IF
 #:endfor
          ENDIF
 #:endfor

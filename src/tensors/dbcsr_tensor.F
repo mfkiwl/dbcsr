@@ -119,7 +119,7 @@ CONTAINS
          INTENT(IN), OPTIONAL                        :: order
          !! Permutation of target tensor index. Exact same convention as order argument of RESHAPE intrinsic
       LOGICAL, INTENT(IN), OPTIONAL                  :: summation, move_data
-      INTEGER, DIMENSION(2, ndims_tensor(tensor_in)), &
+      INTEGER, DIMENSION(:,:,:), &
          INTENT(IN), OPTIONAL                        :: bounds
          !! crop tensor data: start and end index for each tensor dimension
       INTEGER, INTENT(IN), OPTIONAL                  :: unit_nr
@@ -143,7 +143,7 @@ CONTAINS
       INTEGER, DIMENSION(ndims_tensor(tensor_in)), &
          INTENT(IN), OPTIONAL                        :: order
       LOGICAL, INTENT(IN), OPTIONAL                  :: summation, move_data
-      INTEGER, DIMENSION(2, ndims_tensor(tensor_in)), &
+      INTEGER, DIMENSION(:,:,:), &
          INTENT(IN), OPTIONAL                        :: bounds
       INTEGER, INTENT(IN), OPTIONAL                  :: unit_nr
 
@@ -473,15 +473,15 @@ CONTAINS
          !! indices of tensor_2 not to contract
       TYPE(dbcsr_t_type), INTENT(INOUT), TARGET      :: tensor_3
          !! contracted tensor (out)
-      INTEGER, DIMENSION(2, SIZE(contract_1)), &
+      INTEGER, DIMENSION(:,:,:), &
          INTENT(IN), OPTIONAL                        :: bounds_1
          !! bounds corresponding to contract_1 AKA contract_2: start and end index of an index range over
          !! which to contract. For use in batched contraction.
-      INTEGER, DIMENSION(2, SIZE(notcontract_1)), &
+      INTEGER, DIMENSION(:,:,:), &
          INTENT(IN), OPTIONAL                        :: bounds_2
          !! bounds corresponding to notcontract_1: start and end index of an index range.
          !! For use in batched contraction.
-      INTEGER, DIMENSION(2, SIZE(notcontract_2)), &
+      INTEGER, DIMENSION(:,:,:), &
          INTENT(IN), OPTIONAL                        :: bounds_3
          !! bounds corresponding to notcontract_2: start and end index of an index range.
          !! For use in batched contraction.
@@ -563,11 +563,11 @@ CONTAINS
       INTEGER, DIMENSION(:), INTENT(IN)              :: notcontract_1
       INTEGER, DIMENSION(:), INTENT(IN)              :: notcontract_2
       TYPE(dbcsr_t_type), INTENT(INOUT), TARGET      :: tensor_3
-      INTEGER, DIMENSION(2, SIZE(contract_1)), &
+      INTEGER, DIMENSION(:,:,:), &
          INTENT(IN), OPTIONAL                        :: bounds_1
-      INTEGER, DIMENSION(2, SIZE(notcontract_1)), &
+      INTEGER, DIMENSION(:,:,:), &
          INTENT(IN), OPTIONAL                        :: bounds_2
-      INTEGER, DIMENSION(2, SIZE(notcontract_2)), &
+      INTEGER, DIMENSION(:,:,:), &
          INTENT(IN), OPTIONAL                        :: bounds_3
       LOGICAL, INTENT(IN), OPTIONAL                  :: optimize_dist
       TYPE(dbcsr_t_pgrid_type), INTENT(OUT), &
@@ -617,8 +617,8 @@ CONTAINS
                                                         indchar2_mod, indchar3_mod
       CHARACTER(LEN=1), DIMENSION(15) :: alph = &
                                          ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o']
-      INTEGER, DIMENSION(2, ndims_tensor(tensor_1)) :: bounds_t1
-      INTEGER, DIMENSION(2, ndims_tensor(tensor_2)) :: bounds_t2
+      INTEGER, DIMENSION(:,:,:) :: bounds_t1
+      INTEGER, DIMENSION(:,:,:) :: bounds_t2
       LOGICAL                                        :: do_crop_1, do_crop_2, do_write_3, nodata_3, do_batched, pgrid_changed, &
                                                         pgrid_changed_any, do_change_pgrid(2)
       TYPE(dbcsr_tas_split_info)                     :: split_opt, split, split_opt_avg
@@ -1888,11 +1888,11 @@ CONTAINS
       INTEGER, DIMENSION(2, ndims_tensor(tensor_2)), &
          INTENT(OUT)                                 :: bounds_t2
          !! bounds mapped to tensor_2
-      INTEGER, DIMENSION(2, SIZE(contract_1)), &
+      INTEGER, DIMENSION(:,:,:), &
          INTENT(IN), OPTIONAL                        :: bounds_1
-      INTEGER, DIMENSION(2, SIZE(notcontract_1)), &
+      INTEGER, DIMENSION(:,:,:), &
          INTENT(IN), OPTIONAL                        :: bounds_2
-      INTEGER, DIMENSION(2, SIZE(notcontract_2)), &
+      INTEGER, DIMENSION(:,:,:), &
          INTENT(IN), OPTIONAL                        :: bounds_3
       LOGICAL, INTENT(OUT), OPTIONAL                 :: do_crop_1, do_crop_2
          !! whether tensor 1 should be cropped
@@ -1908,19 +1908,19 @@ CONTAINS
       CALL dbcsr_t_get_info(tensor_2, nfull_total=bounds_t2(2, :))
 
       IF (PRESENT(bounds_1)) THEN
-         bounds_t1(:, contract_1) = bounds_1
+         bounds_t1(:,:, contract_1) = bounds_1(:,:,:)
          do_crop(1) = .TRUE.
-         bounds_t2(:, contract_2) = bounds_1
+         bounds_t2(:,:, contract_2) = bounds_1(:,:,:)
          do_crop(2) = .TRUE.
       ENDIF
 
       IF (PRESENT(bounds_2)) THEN
-         bounds_t1(:, notcontract_1) = bounds_2
+         bounds_t1(:,:, notcontract_1) = bounds_2(:,:,:)
          do_crop(1) = .TRUE.
       ENDIF
 
       IF (PRESENT(bounds_3)) THEN
-         bounds_t2(:, notcontract_2) = bounds_3
+         bounds_t2(:,:, notcontract_2) = bounds_3(:,:,:)
          do_crop(2) = .TRUE.
       ENDIF
 

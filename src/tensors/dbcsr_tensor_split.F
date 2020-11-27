@@ -617,15 +617,19 @@ CONTAINS
       LOGICAL, INTENT(IN), OPTIONAL :: move_data
       INTEGER, DIMENSION(SIZE(bounds, 1), 2, ndims_tensor(tensor_in)) :: blk_bounds
       TYPE(dbcsr_t_iterator_type)                     :: iter
-      INTEGER, DIMENSION(ndims_tensor(tensor_in)) :: blk_index, blk_size, blk_offset
+      INTEGER, DIMENSION(ndims_tensor(tensor_in)) :: blk_index, blk_size, blk_offset, nbounds_dim
       LOGICAL :: found, move_data_prv
-      INTEGER :: idim, blk, iblk, iblk_all, nblk, nbounds
+      INTEGER :: idim, blk, iblk, iblk_all, nblk, nbounds, ib
       INTEGER, DIMENSION(:, :), ALLOCATABLE :: blk_ind, blk_ind_tmp
 #:for dparam, dtype, dsuffix in dtype_float_list
 #:for ndim in ndims
       ${dtype}$, DIMENSION(${shape_colon(n=ndim)}$), ALLOCATABLE :: block_${dsuffix}$_${ndim}$d, block_put_${dsuffix}$_${ndim}$d
 #:endfor
 #:endfor
+      INTEGER, DIMENSION(:,:,:), ALLOCATABLE :: blk_bounds_comb
+      INTEGER :: fl, ${varlist("ib")}$, ibound
+      LOGICAL :: do_cycle
+
 
       IF (PRESENT(move_data)) THEN
          move_data_prv = move_data
@@ -644,12 +648,23 @@ CONTAINS
       ALLOCATE (blk_ind_tmp(dbcsr_t_get_num_blocks(tensor_in), ndims_tensor(tensor_in)))
       blk_ind_tmp(:, :) = 0
       iblk = 0
+
+      nbounds_dim(:) = nbounds
+      DO idim = 1, ndims_tensor(tensor_in)
+         fl = FINDLOC(bounds(:, 1, idim), 0, DIM=1) - 1
+         if(fl > -1) nbounds_dim(idim) = FINDLOC(bounds(:, 1, idim), 0, DIM=1) - 1
+      END DO
+
       blk_loop: DO iblk_all = 1, nblk
          CALL dbcsr_t_blk_offsets(tensor_in, blk_ind(iblk_all, :), blk_offset)
          CALL dbcsr_t_blk_sizes(tensor_in, blk_ind(iblk_all, :), blk_size)
          DO idim = 1, ndims_tensor(tensor_in)
-            IF (ALL(bounds(:, 1, idim) > blk_offset(idim) - 1 + blk_size(idim))) CYCLE blk_loop
-            !IF (ALL(bounds(:, 2, idim) < blk_offset(idim))) CYCLE blk_loop
+            do_cycle=.TRUE.
+            DO ibound = 1, nbounds_dim(idim)
+               IF (bounds(ibound, 1, idim) <= blk_offset(idim) - 1 + blk_size(idim) .AND. &
+                  bounds(ibound, 2, idim) >= blk_offset(idim)) do_cycle = .FALSE.
+            ENDDO
+            IF(do_cycle) CYCLE blk_loop
          ENDDO
          iblk = iblk + 1
          blk_ind_tmp(iblk, :) = blk_ind(iblk_all, :)
@@ -661,22 +676,47 @@ CONTAINS
 
       CALL dbcsr_t_reserve_blocks(tensor_out, blk_ind)
 
-
       ! copy blocks
       CALL dbcsr_t_iterator_start(iter, tensor_out)
       iter_loop: DO WHILE (dbcsr_t_iterator_blocks_left(iter))
          CALL dbcsr_t_iterator_next_block(iter, blk_index, blk, blk_size=blk_size, blk_offset=blk_offset)
          blk_bounds(:,:,:) = 0
 
+         nbounds_dim(:) = nbounds
          DO idim = 1, ndims_tensor(tensor_in)
-            DO ib = 1, nbounds
-               IF (bounds(ib, 1, idim) > blk_offset(idim) - 1 + blk_size(idim)) CYCLE
-               !IF (bounds(ib, 2, idim) < blk_offset(idim)) CYCLE
 
-               blk_bounds(ib, 1, idim) = MAX(bounds(1, idim) - blk_offset(idim) + 1, 1)
-               blk_bounds(ib, 2, idim) = MIN(bounds(2, idim) - blk_offset(idim) + 1, blk_size(idim))
+            DO ib = 1, nbounds
+               IF (bounds(ib, 1, idim) == 0) THEN
+                  nbounds_dim(idim) = ib - 1
+                  EXIT
+               ENDIF
+               IF (bounds(ib, 1, idim) > blk_offset(idim) - 1 + blk_size(idim)) CYCLE
+               IF (bounds(ib, 2, idim) < blk_offset(idim)) CYCLE
+
+               blk_bounds(ib, 1, idim) = MAX(bounds(ib,1, idim) - blk_offset(idim) + 1, 1)
+               blk_bounds(ib, 2, idim) = MIN(bounds(ib,2, idim) - blk_offset(idim) + 1, blk_size(idim))
             END DO
          ENDDO
+
+         ALLOCATE(blk_bounds_comb(PRODUCT(nbounds_dim),2,ndims_tensor(tensor_in)))
+         iblk = 0
+#:for ndim in ndims
+         IF(ndims_tensor(tensor_in) == ${ndim}$) THEN
+#:for idim in range(1,ndim+1)
+            DO ib_${idim}$ = 1, nbounds_dim(${idim}$)
+#:endfor
+
+               iblk = iblk + 1
+#:for idim in range(1,ndim+1)
+
+               blk_bounds_comb(iblk, :, ${idim}$) = blk_bounds(ib_${idim}$, :, ${idim}$)
+#:endfor
+
+#:for idim in range(1,ndim+1)
+            ENDDO
+#:endfor
+       endif
+#:endfor
 
 #:for dprec, dparam, dtype, dsuffix in dtype_float_list_prec
          IF (dbcsr_t_get_data_type(tensor_in) == ${dparam}$) THEN
@@ -686,13 +726,12 @@ CONTAINS
                CALL allocate_any(block_put_${dsuffix}$_${ndim}$d, blk_size)
                block_put_${dsuffix}$_${ndim}$d = 0.0_${dprec}$
 
-               DO ib = 1, nbounds
-                  IF (blk_bounds(ib, 1, idim) == 0) CYCLE
+               DO ib = 1, SIZE(blk_bounds_comb,1)
                   block_put_${dsuffix}$_${ndim}$d( &
-                  ${", ".join(["blk_bounds(ib, 1, "+str(idim)+"):blk_bounds(ib, 2,"+str(idim)+")" for idim in range(1, ndim+1)])}$ &
+                  ${", ".join(["blk_bounds_comb(ib, 1, "+str(idim)+"):blk_bounds_comb(ib, 2,"+str(idim)+")" for idim in range(1, ndim+1)])}$ &
                      ) = &
                      block_${dsuffix}$_${ndim}$d( &
-                  ${", ".join(["blk_bounds(ib, 1, "+str(idim)+"):blk_bounds(ib, 2,"+str(idim)+")" for idim in range(1, ndim+1)])}$ &
+                  ${", ".join(["blk_bounds_comb(ib, 1, "+str(idim)+"):blk_bounds_comb(ib, 2,"+str(idim)+")" for idim in range(1, ndim+1)])}$ &
                      )
                END DO
                CALL dbcsr_t_put_block(tensor_out, blk_index, blk_size, block_put_${dsuffix}$_${ndim}$d)
@@ -702,6 +741,7 @@ CONTAINS
 #:endfor
          ENDIF
 #:endfor
+         DEALLOCATE(blk_bounds_comb)
       ENDDO iter_loop
       CALL dbcsr_t_iterator_stop(iter)
       CALL dbcsr_t_finalize(tensor_out)

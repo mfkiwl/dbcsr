@@ -599,19 +599,25 @@ CONTAINS
                                               notcontract_1, notcontract_2, &
                                               map_1, map_2
       INTEGER, INTENT(IN)                  :: unit_nr
-      INTEGER, DIMENSION(2, SIZE(contract_1)), &
-         OPTIONAL                          :: bounds_1
-      INTEGER, DIMENSION(2, SIZE(notcontract_1)), &
-         OPTIONAL                          :: bounds_2
-      INTEGER, DIMENSION(2, SIZE(notcontract_2)), &
-         OPTIONAL                          :: bounds_3
+      INTEGER, DIMENSION(:,:,:), &
+         INTENT(IN), OPTIONAL                        :: bounds_1
+         !! bounds corresponding to contract_1 AKA contract_2: start and end index of an index range over
+         !! which to contract. For use in batched contraction.
+      INTEGER, DIMENSION(:,:,:), &
+         INTENT(IN), OPTIONAL                        :: bounds_2
+         !! bounds corresponding to notcontract_1: start and end index of an index range.
+         !! For use in batched contraction.
+      INTEGER, DIMENSION(:,:,:), &
+         INTENT(IN), OPTIONAL                        :: bounds_3
+         !! bounds corresponding to notcontract_2: start and end index of an index range.
+         !! For use in batched contraction.
       LOGICAL, INTENT(IN), OPTIONAL        :: log_verbose
       LOGICAL, INTENT(IN), OPTIONAL        :: write_int
       INTEGER                              :: io_unit, mynode, numnodes, mp_comm
       INTEGER, DIMENSION(:), ALLOCATABLE   :: size_1, size_2, size_3, &
                                               order_t1, order_t2, order_t3
-      INTEGER, DIMENSION(2, ndims_tensor(tensor_1)) :: bounds_t1
-      INTEGER, DIMENSION(2, ndims_tensor(tensor_2)) :: bounds_t2
+      INTEGER, DIMENSION(:,:,:), ALLOCATABLE :: bounds_t1
+      INTEGER, DIMENSION(:,:,:), ALLOCATABLE :: bounds_t2
 
 #:for ndim in ndims
       REAL(KIND=real_8), ALLOCATABLE, &
@@ -635,6 +641,12 @@ CONTAINS
       LOGICAL, PARAMETER                  :: debug = .FALSE.
       REAL(KIND=real_8)                   :: cs_1, cs_2, cs_3, eql_diff
       LOGICAL                             :: do_crop_1, do_crop_2
+
+
+      ALLOCATE(bounds_t1(SIZE(bounds_1,1),2, ndims_tensor(tensor_1)))
+      ALLOCATE(bounds_t2(SIZE(bounds_2,1),2, ndims_tensor(tensor_2)))
+      bounds_t1(:,:,:) = 0
+      bounds_t2(:,:,:) = 0
 
       mp_comm = tensor_1%pgrid%mp_comm_2d
       CALL mp_environ(numnodes, mynode, mp_comm)
@@ -692,26 +704,28 @@ CONTAINS
       do_crop_1 = .FALSE.; do_crop_2 = .FALSE.!; do_crop_3 = .FALSE.
 
       ! crop tensor as first step
-      bounds_t1(1, :) = 1
-      CALL dbcsr_t_get_info(tensor_1, nfull_total=bounds_t1(2, :))
+      bounds_t1(1,1, :) = 1
+      CALL dbcsr_t_get_info(tensor_1, nfull_total=bounds_t1(1,2, :))
 
-      bounds_t2(1, :) = 1
-      CALL dbcsr_t_get_info(tensor_2, nfull_total=bounds_t2(2, :))
+      bounds_t2(1,1, :) = 1
+      CALL dbcsr_t_get_info(tensor_2, nfull_total=bounds_t2(1,2, :))
 
       IF (PRESENT(bounds_1)) THEN
-         bounds_t1(:, contract_1) = bounds_1
+         bounds_t1(:, :,  contract_1) = bounds_1(:,:,:)
          do_crop_1 = .TRUE.
-         bounds_t2(:, contract_2) = bounds_1
+         bounds_t2(:, :, contract_2) = bounds_1(:,:,:)
          do_crop_2 = .TRUE.
       ENDIF
 
       IF (PRESENT(bounds_2)) THEN
-         bounds_t1(:, notcontract_1) = bounds_2
+         bounds_t1(:, :, notcontract_1) = bounds_2(:,:,:)
+
          do_crop_1 = .TRUE.
       ENDIF
 
       IF (PRESENT(bounds_3)) THEN
-         bounds_t2(:, notcontract_2) = bounds_3
+         bounds_t2(:, :, notcontract_2) = bounds_3(:,:,:)
+
          do_crop_2 = .TRUE.
       ENDIF
 
@@ -724,8 +738,8 @@ CONTAINS
          CALL dist_sparse_tensor_to_repl_dense_array(tensor_${i}$, array_${i}$_${ndim}$d_full)
          CALL allocate_any(array_${i}$_${ndim}$d, shape_spec=SHAPE(array_${i}$_${ndim}$d_full))
          array_${i}$_${ndim}$d = 0.0_real_8
-         array_${i}$_${ndim}$d(${", ".join(["bounds_t" + str(i) + "(1, " + str(idim) + "):bounds_t" + str(i) + "(2, " + str(idim) + ")" for idim in range(1, ndim+1)])}$) = &
-         array_${i}$_${ndim}$d_full(${", ".join(["bounds_t" + str(i) + "(1, " + str(idim) + "):bounds_t" + str(i) + "(2, " + str(idim) + ")" for idim in range(1, ndim+1)])}$)
+         array_${i}$_${ndim}$d(${", ".join(["bounds_t" + str(i) + "(1,1, " + str(idim) + "):bounds_t" + str(i) + "(1,2, " + str(idim) + ")" for idim in range(1, ndim+1)])}$) = &
+         array_${i}$_${ndim}$d_full(${", ".join(["bounds_t" + str(i) + "(1,1, " + str(idim) + "):bounds_t" + str(i) + "(1,2, " + str(idim) + ")" for idim in range(1, ndim+1)])}$)
 #:else
          CALL dist_sparse_tensor_to_repl_dense_array(tensor_${i}$, array_${i}$_${ndim}$d)
 #:endif

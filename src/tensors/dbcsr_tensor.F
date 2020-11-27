@@ -617,8 +617,8 @@ CONTAINS
                                                         indchar2_mod, indchar3_mod
       CHARACTER(LEN=1), DIMENSION(15) :: alph = &
                                          ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o']
-      INTEGER, DIMENSION(:,:,:) :: bounds_t1
-      INTEGER, DIMENSION(:,:,:) :: bounds_t2
+      INTEGER, DIMENSION(:,:,:), ALLOCATABLE :: bounds_t1
+      INTEGER, DIMENSION(:,:,:), ALLOCATABLE :: bounds_t2
       LOGICAL                                        :: do_crop_1, do_crop_2, do_write_3, nodata_3, do_batched, pgrid_changed, &
                                                         pgrid_changed_any, do_change_pgrid(2)
       TYPE(dbcsr_tas_split_info)                     :: split_opt, split, split_opt_avg
@@ -1844,11 +1844,11 @@ CONTAINS
       INTEGER, DIMENSION(:), INTENT(IN)              :: notcontract_1
       INTEGER, DIMENSION(:), INTENT(IN)              :: notcontract_2
       TYPE(dbcsr_t_type), INTENT(INOUT), TARGET      :: tensor_3
-      INTEGER, DIMENSION(2, SIZE(contract_1)), &
+      INTEGER, DIMENSION(:,:,:), &
          INTENT(IN), OPTIONAL                        :: bounds_1
-      INTEGER, DIMENSION(2, SIZE(notcontract_1)), &
+      INTEGER, DIMENSION(:,:,:), &
          INTENT(IN), OPTIONAL                        :: bounds_2
-      INTEGER, DIMENSION(2, SIZE(notcontract_2)), &
+      INTEGER, DIMENSION(:,:,:), &
          INTENT(IN), OPTIONAL                        :: bounds_3
       REAL(KIND=real_8), INTENT(IN), OPTIONAL        :: filter_eps
       INTEGER, INTENT(OUT)                           :: nblks_local
@@ -1882,12 +1882,11 @@ CONTAINS
       TYPE(dbcsr_t_type), INTENT(IN)      :: tensor_1, tensor_2
       INTEGER, DIMENSION(:), INTENT(IN)   :: contract_1, contract_2, &
                                              notcontract_1, notcontract_2
-      INTEGER, DIMENSION(2, ndims_tensor(tensor_1)), &
+      INTEGER, DIMENSION(:,:,:), allocatable, &
          INTENT(OUT)                                 :: bounds_t1
-         !! bounds mapped to tensor_1
-      INTEGER, DIMENSION(2, ndims_tensor(tensor_2)), &
+        !! bounds mapped to tensor_1
+      INTEGER, DIMENSION(:,:,:), allocatable, &
          INTENT(OUT)                                 :: bounds_t2
-         !! bounds mapped to tensor_2
       INTEGER, DIMENSION(:,:,:), &
          INTENT(IN), OPTIONAL                        :: bounds_1
       INTEGER, DIMENSION(:,:,:), &
@@ -1898,14 +1897,25 @@ CONTAINS
          !! whether tensor 1 should be cropped
          !! whether tensor 2 should be cropped
       LOGICAL, DIMENSION(2)                          :: do_crop
+      INTEGER :: bs_1, bs_2, bs_3
 
       do_crop = .FALSE.
 
-      bounds_t1(1, :) = 1
-      CALL dbcsr_t_get_info(tensor_1, nfull_total=bounds_t1(2, :))
+      bs_1 = 1
+      bs_2 = 1
+      bs_3 = 1
+      IF(PRESENT(bounds_1)) bs_1 = SIZE(bounds_1,1)
+      IF(PRESENT(bounds_2)) bs_2 = SIZE(bounds_2,1)
+      IF(PRESENT(bounds_3)) bs_3 = SIZE(bounds_3,1)
+      ALLOCATE(bounds_t1(MAX(bs_1,bs_2), 2,ndims_tensor(tensor_1)))
+      bounds_t1(:,:,:) = 0
+      bounds_t1(1,1,:) = 1
+      CALL dbcsr_t_get_info(tensor_1, nfull_total=bounds_t1(1,2, :))
 
-      bounds_t2(1, :) = 1
-      CALL dbcsr_t_get_info(tensor_2, nfull_total=bounds_t2(2, :))
+      ALLOCATE(bounds_t2(MAX(bs_2, bs_3), 2,ndims_tensor(tensor_2)))
+      bounds_t2(:,:,:) = 0
+      bounds_t2(1,1, :) = 1
+      CALL dbcsr_t_get_info(tensor_2, nfull_total=bounds_t2(1,2, :))
 
       IF (PRESENT(bounds_1)) THEN
          bounds_t1(:,:, contract_1) = bounds_1(:,:,:)

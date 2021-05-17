@@ -586,7 +586,7 @@ CONTAINS
                                     contract_2, notcontract_2, &
                                     map_1, map_2, &
                                     unit_nr, &
-                                    bounds_1, bounds_2, bounds_3, &
+                                    batch_iter_1, batch_iter_2, batch_iter_3, &
                                     log_verbose, write_int)
       !! test tensor contraction
       !! @note for testing/debugging, simply replace a call to dbcsr_t_contract with a call to this routine
@@ -599,18 +599,7 @@ CONTAINS
                                               notcontract_1, notcontract_2, &
                                               map_1, map_2
       INTEGER, INTENT(IN)                  :: unit_nr
-      INTEGER, DIMENSION(:,:,:), &
-         INTENT(IN), OPTIONAL                        :: bounds_1
-         !! bounds corresponding to contract_1 AKA contract_2: start and end index of an index range over
-         !! which to contract. For use in batched contraction.
-      INTEGER, DIMENSION(:,:,:), &
-         INTENT(IN), OPTIONAL                        :: bounds_2
-         !! bounds corresponding to notcontract_1: start and end index of an index range.
-         !! For use in batched contraction.
-      INTEGER, DIMENSION(:,:,:), &
-         INTENT(IN), OPTIONAL                        :: bounds_3
-         !! bounds corresponding to notcontract_2: start and end index of an index range.
-         !! For use in batched contraction.
+      INTEGER, DIMENSION(:), INTENT(IN), OPTIONAL :: batch_iter_1, batch_iter_2, batch_iter_3
       LOGICAL, INTENT(IN), OPTIONAL        :: log_verbose
       LOGICAL, INTENT(IN), OPTIONAL        :: write_int
       INTEGER                              :: io_unit, mynode, numnodes, mp_comm
@@ -641,12 +630,6 @@ CONTAINS
       LOGICAL, PARAMETER                  :: debug = .FALSE.
       REAL(KIND=real_8)                   :: cs_1, cs_2, cs_3, eql_diff
       LOGICAL                             :: do_crop_1, do_crop_2
-
-
-      ALLOCATE(bounds_t1(SIZE(bounds_1,1),2, ndims_tensor(tensor_1)))
-      ALLOCATE(bounds_t2(SIZE(bounds_2,1),2, ndims_tensor(tensor_2)))
-      bounds_t1(:,:,:) = 0
-      bounds_t2(:,:,:) = 0
 
       mp_comm = tensor_1%pgrid%mp_comm_2d
       CALL mp_environ(numnodes, mynode, mp_comm)
@@ -689,7 +672,9 @@ CONTAINS
                             contract_1, notcontract_1, &
                             contract_2, notcontract_2, &
                             map_1, map_2, &
-                            bounds_1=bounds_1, bounds_2=bounds_2, bounds_3=bounds_3, &
+                            batch_iter_1=batch_iter_1, &
+                            batch_iter_2=batch_iter_2, &
+                            batch_iter_3=batch_iter_3, &
                             filter_eps=1.0E-12_real_8, &
                             unit_nr=io_unit, log_verbose=log_verbose)
 
@@ -701,33 +686,12 @@ CONTAINS
          ENDIF
       ENDIF
 
-      do_crop_1 = .FALSE.; do_crop_2 = .FALSE.!; do_crop_3 = .FALSE.
-
-      ! crop tensor as first step
-      bounds_t1(1,1, :) = 1
-      CALL dbcsr_t_get_info(tensor_1, nfull_total=bounds_t1(1,2, :))
-
-      bounds_t2(1,1, :) = 1
-      CALL dbcsr_t_get_info(tensor_2, nfull_total=bounds_t2(1,2, :))
-
-      IF (PRESENT(bounds_1)) THEN
-         bounds_t1(:, :,  contract_1) = bounds_1(:,:,:)
-         do_crop_1 = .TRUE.
-         bounds_t2(:, :, contract_2) = bounds_1(:,:,:)
-         do_crop_2 = .TRUE.
-      ENDIF
-
-      IF (PRESENT(bounds_2)) THEN
-         bounds_t1(:, :, notcontract_1) = bounds_2(:,:,:)
-
-         do_crop_1 = .TRUE.
-      ENDIF
-
-      IF (PRESENT(bounds_3)) THEN
-         bounds_t2(:, :, notcontract_2) = bounds_3(:,:,:)
-
-         do_crop_2 = .TRUE.
-      ENDIF
+      CALL dbcsr_t_map_bounds_to_tensors(tensor_1, tensor_2, &
+                                         contract_1, notcontract_1, &
+                                         contract_2, notcontract_2, &
+                                         bounds_t1, bounds_t2, &
+                                         batch_iter_1, batch_iter_2, batch_iter_3, &
+                                         do_crop_1, do_crop_2)
 
       ! Convert tensors to simple multidimensional arrays
 #:for i in range(1,4)

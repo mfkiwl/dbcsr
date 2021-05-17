@@ -51,7 +51,8 @@ MODULE dbcsr_tensor
       dbcsr_t_clear, dbcsr_t_finalize, dbcsr_t_get_num_blocks, dbcsr_t_scale, &
       dbcsr_t_get_num_blocks_total, dbcsr_t_get_info, ndims_matrix_row, ndims_matrix_column, &
       dbcsr_t_max_nblks_local, dbcsr_t_default_distvec, dbcsr_t_contraction_storage, dbcsr_t_nblks_total, &
-      dbcsr_t_distribution_new, dbcsr_t_copy_contraction_storage, dbcsr_t_pgrid_destroy
+      dbcsr_t_distribution_new, dbcsr_t_copy_contraction_storage, dbcsr_t_pgrid_destroy, dbcsr_t_blk_offsets, &
+      dbcsr_t_blk_sizes, a2
    USE dbcsr_kinds, ONLY: &
       ${uselist(dtype_float_prec)}$, default_string_length, int_8, dp
    USE dbcsr_mpiwrap, ONLY: &
@@ -98,6 +99,8 @@ MODULE dbcsr_tensor
       dbcsr_t_contract_index, &
       dbcsr_t_batched_contract_init, &
       dbcsr_t_batched_contract_finalize
+
+
 
 CONTAINS
 
@@ -423,6 +426,7 @@ CONTAINS
                                contract_2, notcontract_2, &
                                map_1, map_2, &
                                bounds_1, bounds_2, bounds_3, &
+                               batch_iter_1, batch_iter_2, batch_iter_3, &
                                optimize_dist, pgrid_opt_1, pgrid_opt_2, pgrid_opt_3, &
                                filter_eps, flop, move_data, retain_sparsity, unit_nr, log_verbose)
       !! Contract tensors by multiplying matrix representations.
@@ -485,6 +489,7 @@ CONTAINS
          INTENT(IN), OPTIONAL                        :: bounds_3
          !! bounds corresponding to notcontract_2: start and end index of an index range.
          !! For use in batched contraction.
+      INTEGER, DIMENSION(:), INTENT(IN), OPTIONAL :: batch_iter_1, batch_iter_2, batch_iter_3
       LOGICAL, INTENT(IN), OPTIONAL                  :: optimize_dist
          !! Whether distribution should be optimized internally. In the current implementation this guarantees optimal parameters
          !! only for dense matrices.
@@ -528,6 +533,9 @@ CONTAINS
                                    bounds_1=bounds_1, &
                                    bounds_2=bounds_2, &
                                    bounds_3=bounds_3, &
+                                   batch_iter_1=batch_iter_1, &
+                                   batch_iter_2=batch_iter_2, &
+                                   batch_iter_3=batch_iter_3, &
                                    optimize_dist=optimize_dist, &
                                    pgrid_opt_1=pgrid_opt_1, &
                                    pgrid_opt_2=pgrid_opt_2, &
@@ -548,6 +556,7 @@ CONTAINS
                                       contract_2, notcontract_2, &
                                       map_1, map_2, &
                                       bounds_1, bounds_2, bounds_3, &
+                                      batch_iter_1, batch_iter_2, batch_iter_3, &
                                       optimize_dist, pgrid_opt_1, pgrid_opt_2, pgrid_opt_3, &
                                       filter_eps, flop, move_data, retain_sparsity, &
                                       nblks_local, result_index, unit_nr, log_verbose)
@@ -563,12 +572,6 @@ CONTAINS
       INTEGER, DIMENSION(:), INTENT(IN)              :: notcontract_1
       INTEGER, DIMENSION(:), INTENT(IN)              :: notcontract_2
       TYPE(dbcsr_t_type), INTENT(INOUT), TARGET      :: tensor_3
-      INTEGER, DIMENSION(:,:,:), &
-         INTENT(IN), OPTIONAL                        :: bounds_1
-      INTEGER, DIMENSION(:,:,:), &
-         INTENT(IN), OPTIONAL                        :: bounds_2
-      INTEGER, DIMENSION(:,:,:), &
-         INTENT(IN), OPTIONAL                        :: bounds_3
       LOGICAL, INTENT(IN), OPTIONAL                  :: optimize_dist
       TYPE(dbcsr_t_pgrid_type), INTENT(OUT), &
          POINTER, OPTIONAL                           :: pgrid_opt_1
@@ -587,6 +590,14 @@ CONTAINS
          !! get indices of non-zero tensor blocks for tensor_3 without actually performing contraction
          !! this is an estimate based on block norm multiplication
       INTEGER, OPTIONAL, INTENT(IN)                  :: unit_nr
+
+      INTEGER, DIMENSION(:), INTENT(IN), OPTIONAL :: batch_iter_1, batch_iter_2, batch_iter_3
+      INTEGER, DIMENSION(:,:,:), &
+         INTENT(IN), OPTIONAL                        :: bounds_1
+      INTEGER, DIMENSION(:,:,:), &
+         INTENT(IN), OPTIONAL                        :: bounds_2
+      INTEGER, DIMENSION(:,:,:), &
+         INTENT(IN), OPTIONAL                        :: bounds_3
       LOGICAL, INTENT(IN), OPTIONAL                  :: log_verbose
 
       TYPE(dbcsr_t_type), POINTER                    :: tensor_contr_1, tensor_contr_2, tensor_contr_3
@@ -680,6 +691,9 @@ CONTAINS
                                          contract_2, notcontract_2, &
                                          bounds_t1, bounds_t2, &
                                          bounds_1=bounds_1, bounds_2=bounds_2, bounds_3=bounds_3, &
+                                         batch_iter_1=batch_iter_1, &
+                                         batch_iter_2=batch_iter_2, &
+                                         batch_iter_3=batch_iter_3, &
                                          do_crop_1=do_crop_1, do_crop_2=do_crop_2)
 
       IF (do_crop_1) THEN
@@ -1827,6 +1841,7 @@ CONTAINS
                                      contract_2, notcontract_2, &
                                      map_1, map_2, &
                                      bounds_1, bounds_2, bounds_3, &
+                                     batch_iter_1, batch_iter_2, batch_iter_3, &
                                      filter_eps, &
                                      nblks_local, result_index)
       !! get indices of non-zero tensor blocks for contraction result without actually
@@ -1843,13 +1858,16 @@ CONTAINS
       INTEGER, DIMENSION(:), INTENT(IN)              :: map_2
       INTEGER, DIMENSION(:), INTENT(IN)              :: notcontract_1
       INTEGER, DIMENSION(:), INTENT(IN)              :: notcontract_2
-      TYPE(dbcsr_t_type), INTENT(INOUT), TARGET      :: tensor_3
       INTEGER, DIMENSION(:,:,:), &
          INTENT(IN), OPTIONAL                        :: bounds_1
       INTEGER, DIMENSION(:,:,:), &
          INTENT(IN), OPTIONAL                        :: bounds_2
       INTEGER, DIMENSION(:,:,:), &
          INTENT(IN), OPTIONAL                        :: bounds_3
+      INTEGER, DIMENSION(:), INTENT(IN), OPTIONAL ::           batch_iter_1
+      INTEGER, DIMENSION(:), INTENT(IN), OPTIONAL ::           batch_iter_2
+      INTEGER, DIMENSION(:), INTENT(IN), OPTIONAL ::           batch_iter_3
+      TYPE(dbcsr_t_type), INTENT(INOUT), TARGET      :: tensor_3
       REAL(KIND=real_8), INTENT(IN), OPTIONAL        :: filter_eps
       INTEGER, INTENT(OUT)                           :: nblks_local
          !! number of local blocks on this MPI rank
@@ -1865,12 +1883,63 @@ CONTAINS
                                    bounds_1=bounds_1, &
                                    bounds_2=bounds_2, &
                                    bounds_3=bounds_3, &
+                                   batch_iter_1=batch_iter_1,&
+                                   batch_iter_2=batch_iter_2,&
+                                   batch_iter_3=batch_iter_3,&
                                    filter_eps=filter_eps, &
                                    nblks_local=nblks_local, &
                                    result_index=result_index)
    END SUBROUTINE
 
    SUBROUTINE dbcsr_t_map_bounds_to_tensors(tensor_1, tensor_2, &
+                                            contract_1, notcontract_1, &
+                                            contract_2, notcontract_2, &
+                                            bounds_t1, bounds_t2, &
+                                            bounds_1, bounds_2, bounds_3, &
+                                            batch_iter_1, batch_iter_2, batch_iter_3, &
+                                            do_crop_1, do_crop_2)
+      !! Map contraction bounds to bounds referring to tensor indices
+      !! see dbcsr_t_contract for docu of dummy arguments
+
+      TYPE(dbcsr_t_type), INTENT(IN)      :: tensor_1, tensor_2
+      INTEGER, DIMENSION(:), INTENT(IN)   :: contract_1, contract_2, &
+                                             notcontract_1, notcontract_2
+      INTEGER, DIMENSION(:,:,:), allocatable, &
+         INTENT(OUT)                                 :: bounds_t1
+        !! bounds mapped to tensor_1
+      INTEGER, DIMENSION(:,:,:), allocatable, &
+         INTENT(OUT)                                 :: bounds_t2
+      INTEGER, DIMENSION(:,:,:), &
+         INTENT(IN), OPTIONAL                        :: bounds_1
+      INTEGER, DIMENSION(:,:,:), &
+         INTENT(IN), OPTIONAL                        :: bounds_2
+      INTEGER, DIMENSION(:,:,:), &
+         INTENT(IN), OPTIONAL                        :: bounds_3
+      INTEGER, DIMENSION(:), INTENT(IN), OPTIONAL ::           batch_iter_1
+      INTEGER, DIMENSION(:), INTENT(IN), OPTIONAL ::           batch_iter_2
+      INTEGER, DIMENSION(:), INTENT(IN), OPTIONAL ::           batch_iter_3
+
+      LOGICAL, INTENT(OUT), OPTIONAL                 :: do_crop_1, do_crop_2
+
+      IF(PRESENT(bounds_1) .OR. PRESENT(bounds_2) .OR. PRESENT(bounds_3)) THEN
+         CALL dbcsr_t_map_bounds_to_tensors_bounds(tensor_1, tensor_2, &
+                                            contract_1, notcontract_1, &
+                                            contract_2, notcontract_2, &
+                                            bounds_t1, bounds_t2, &
+                                            bounds_1, bounds_2, bounds_3, &
+                                            do_crop_1, do_crop_2)
+      ELSE
+         CALL dbcsr_t_map_bounds_to_tensors_batch(tensor_1, tensor_2, &
+                                            contract_1, notcontract_1, &
+                                            contract_2, notcontract_2, &
+                                            bounds_t1, bounds_t2, &
+                                            batch_iter_1, batch_iter_2, batch_iter_3, &
+                                            do_crop_1, do_crop_2)
+      ENDIF
+
+   END SUBROUTINE
+
+   SUBROUTINE dbcsr_t_map_bounds_to_tensors_bounds(tensor_1, tensor_2, &
                                             contract_1, notcontract_1, &
                                             contract_2, notcontract_2, &
                                             bounds_t1, bounds_t2, &
@@ -1933,6 +2002,216 @@ CONTAINS
          bounds_t2(:,:, notcontract_2) = bounds_3(:,:,:)
          do_crop(2) = .TRUE.
       ENDIF
+
+      IF (PRESENT(do_crop_1)) do_crop_1 = do_crop(1)
+      IF (PRESENT(do_crop_2)) do_crop_2 = do_crop(2)
+
+   END SUBROUTINE
+
+   SUBROUTINE dbcsr_t_map_bounds_to_tensors_batch(tensor_1, tensor_2, &
+                                            contract_1, notcontract_1, &
+                                            contract_2, notcontract_2, &
+                                            bounds_t1, bounds_t2, &
+                                            batch_iter_1, batch_iter_2, batch_iter_3, &
+                                            do_crop_1, do_crop_2)
+      !! Map contraction bounds to bounds referring to tensor indices
+      !! see dbcsr_t_contract for docu of dummy arguments
+
+      TYPE(dbcsr_t_type), INTENT(IN)      :: tensor_1, tensor_2
+      INTEGER, DIMENSION(:), INTENT(IN)   :: contract_1, contract_2, &
+                                             notcontract_1, notcontract_2
+      TYPE(a2), DIMENSION(:), ALLOCATABLE, INTENT(OUT) :: bounds_t1
+      !INTEGER, DIMENSION(:,:,:), allocatable, &
+      !   INTENT(OUT)                                 :: bounds_t1
+        !! bounds mapped to tensor_1
+      TYPE(a2), DIMENSION(:), ALLOCATABLE, INTENT(OUT) :: bounds_t2
+      !INTEGER, DIMENSION(:,:,:), allocatable, &
+      !   INTENT(OUT)                                 :: bounds_t2
+      INTEGER, DIMENSION(:), INTENT(IN), OPTIONAL ::           batch_iter_1
+      INTEGER, DIMENSION(:), INTENT(IN), OPTIONAL ::           batch_iter_2
+      INTEGER, DIMENSION(:), INTENT(IN), OPTIONAL ::           batch_iter_3
+      !INTEGER, DIMENSION(:,:,:), &
+      !   INTENT(IN), OPTIONAL                        :: bounds_1
+      !INTEGER, DIMENSION(:,:,:), &
+      !   INTENT(IN), OPTIONAL                        :: bounds_2
+      !INTEGER, DIMENSION(:,:,:), &
+      !   INTENT(IN), OPTIONAL                        :: bounds_3
+      LOGICAL, INTENT(OUT), OPTIONAL                 :: do_crop_1, do_crop_2
+         !! whether tensor 1 should be cropped
+         !! whether tensor 2 should be cropped
+      LOGICAL, DIMENSION(2)                          :: do_crop
+      INTEGER :: iblk, idim, nb_1, nb_2
+      INTEGER, DIMENSION(:), ALLOCATABLE :: batch_iter_t1, batch_iter_t2, blk_offset, blk_size, bounds
+
+      do_crop = .FALSE.
+
+      ALLOCATE(batch_iter_t1(ndims_tensor(tensor_1)))
+      ALLOCATE(batch_iter_t2(ndims_tensor(tensor_2)))
+      batch_iter_t1(:) = 1
+      batch_iter_t2(:) = 1
+
+      nb_1 = 1; nb_2 = 1
+      IF(PRESENT(batch_iter_1)) THEN
+         IF(tensor_1%matrix_rep%do_batched == 0 &
+            .OR. tensor_2%matrix_rep%do_batched == 0) THEN
+            DBCSR_ABORT("batched contraction requires initialization.")
+         ENDIF
+         nb_1 = MAX(nb_1, MAXVAL(tensor_1%contraction_storage%nbatch(contract_1)))
+         nb_2 = MAX(nb_2, MAXVAL(tensor_1%contraction_storage%nbatch(contract_2)))
+      ENDIF
+
+      IF(PRESENT(batch_iter_2)) THEN
+         IF(tensor_1%matrix_rep%do_batched == 0) THEN
+            DBCSR_ABORT("batched contraction requires initialization.")
+         ENDIF
+         nb_1 = MAX(nb_1, MAXVAL(tensor_1%contraction_storage%nbatch(notcontract_1)))
+      ENDIF
+
+      IF(PRESENT(batch_iter_3)) THEN
+         IF(tensor_2%matrix_rep%do_batched == 0) THEN
+            DBCSR_ABORT("batched contraction requires initialization.")
+         ENDIF
+         nb_2 = MAX(nb_2, MAXVAL(tensor_2%contraction_storage%nbatch(notcontract_2)))
+      ENDIF
+
+      ALLOCATE(bounds_t1(2))
+      ALLOCATE(bounds_t1(1)%a(ndims_tensor))
+      ALLOCATE(bounds_t1(2)%a(ndims_tensor))
+      IF(.NOT. do_crop_1) THEN
+         DO idim = 1, ndims_tensor(tensor_1)
+            ALLOCATE (bounds_t1(1)%a(idim)%a(1))
+            ALLOCATE (bounds_t1(2)%a(idim)%a(1))
+         END DO
+
+         ALLOCATE(bounds(ndims_tensor(tensor_1)))
+         CALL dbcsr_t_get_info(tensor_1, nfull_total=bounds)
+         DO idim=1, ndims_tensor(tensor_1)
+            bounds_t1(1)%a(idim)%a(1) = bounds(idim)
+         ENDDO
+         DEALLOCATE(bounds)
+      ENDIF
+
+      ALLOCATE(bounds_t2(2))
+      ALLOCATE(bounds_t2(1)%a(ndims_tensor))
+      ALLOCATE(bounds_t2(2)%a(ndims_tensor))
+      IF(.NOT. do_crop_2) THEN
+         DO idim = 1, ndims_tensor(tensor_2)
+            ALLOCATE (bounds_t2(1)%a(idim)%a(1))
+            ALLOCATE (bounds_t2(2)%a(idim)%a(1))
+         END DO
+
+         ALLOCATE(bounds(ndims_tensor(tensor_2)))
+         CALL dbcsr_t_get_info(tensor_2, nfull_total=bounds)
+         DO idim=1, ndims_tensor(tensor_2)
+            bounds_t2(1)%a(idim)%a(1) = bounds(idim)
+         ENDDO
+         DEALLOCATE(bounds)
+      ENDIF
+
+      IF(PRESENT(batch_iter_1)) THEN
+         batch_iter_t1(contract_1) = batch_iter_1(:)
+         do_crop(1) = .TRUE.
+         batch_iter_t2(contract_2) = batch_iter_1(:)
+         do_crop(2) = .TRUE.
+      ENDIF
+
+      IF(PRESENT(batch_iter_2)) THEN
+         batch_iter_t1(notcontract_1) = batch_iter_2(:)
+         do_crop(1) = .TRUE.
+      ENDIF
+
+      IF(PRESENT(batch_iter_3)) THEN
+         IF(tensor_2%matrix_rep%do_batched == 0) THEN
+            DBCSR_ABORT("batched contraction requires initialization.")
+         ENDIF
+         batch_iter_t2(notcontract_2) = batch_iter_3(:)
+         do_crop(2) = .TRUE.
+      ENDIF
+
+      !DO idim = 1, SIZE(batch_iter_t1)
+      ALLOCATE(blk_offset(ndims_tensor(tensor_1)))
+      ALLOCATE(blk_size(ndims_tensor(tensor_1)))
+         IF (do_crop(1)) THEN
+
+            ALLOCATE(nblk_batch(ndims_tensor(tensor_1)))
+            DO idim = 1, ndims_tensor(tensor_1)
+               nblk_batch(idim) = SIZE(tensor_1%contraction_storage%batch_blks(idim)%a(batch_iter_t1(idim))%a(:))
+               ALLOCATE (bounds_t1(1)%a(idim)%a(nblk_batch(idim)))
+               ALLOCATE (bounds_t1(2)%a(idim)%a(nblk_batch(idim)))
+               bounds_t1(1)%a(idim)%a(:) = tensor_1%contraction_storage%batch_blks(idim)%a(batch_iter_t1(idim))%a(:)
+            END DO
+            DO idim = 1, ndims_tensor(tensor_1)
+               CALL get_ith_array(tensor_1%blk_sizes, idim, blk_size)
+               CALL get_ith_array(tensor_1%blk_offsets, idim, blk_offset)
+               DO iblk = 1, nblk_batch(idim)
+                  blk_ind(idim) = bounds_t1(1)%a(idim)%a(iblk)
+                  bounds_t1(1)%a(idim)%a(iblk) = blk_offset(blk_ind(idim))
+                  bounds_t1(2)%a(idim)%a(iblk) = blk_offset(blk_ind(idim)) + blk_size(blk_ind(idim)) - 1
+               END DO
+               DEALLOCATE(blk_size, blk_offset)
+            END DO
+            DEALLOCATE(blk_offset, blk_size, nblk_batch)
+         END IF
+      !END DO
+
+      ALLOCATE(blk_offset(ndims_tensor(tensor_2)))
+      ALLOCATE(blk_size(ndims_tensor(tensor_2)))
+         IF (do_crop(2)) THEN
+
+            ALLOCATE(nblk_batch(ndims_tensor(tensor_2)))
+            DO idim = 1, ndims_tensor(tensor_2)
+               nblk_batch(idim) = SIZE(tensor_2%contraction_storage%batch_blks(idim)%a(batch_iter_t2(idim))%a(:))
+               ALLOCATE (bounds_t2(1)%a(idim)%a(nblk_batch(idim)))
+               ALLOCATE (bounds_t2(2)%a(idim)%a(nblk_batch(idim)))
+               bounds_t2(1)%a(idim)%a(:) = tensor_2%contraction_storage%batch_blks(idim)%a(batch_iter_t2(idim))%a(:)
+            END DO
+            DO idim = 1, ndims_tensor(tensor_2)
+               CALL get_ith_array(tensor_2%blk_sizes, idim, blk_size)
+               CALL get_ith_array(tensor_2%blk_offsets, idim, blk_offset)
+               DO iblk = 1, nblk_batch(idim)
+                  blk_ind(idim) = bounds_t2(1)%a(idim)%a(iblk)
+                  bounds_t2(1)%a(idim)%a(iblk) = blk_offset(blk_ind(idim))
+                  bounds_t2(2)%a(idim)%a(iblk) = blk_offset(blk_ind(idim)) + blk_size(blk_ind(idim)) - 1
+               END DO
+               DEALLOCATE(blk_size, blk_offset)
+            END DO
+            DEALLOCATE(blk_offset, blk_size, nblk_batch)
+         END IF
+      !END DO
+
+
+      !bs_1 = 1
+      !bs_2 = 1
+      !bs_3 = 1
+      !IF(PRESENT(bounds_1)) bs_1 = SIZE(bounds_1,1)
+      !IF(PRESENT(bounds_2)) bs_2 = SIZE(bounds_2,1)
+      !IF(PRESENT(bounds_3)) bs_3 = SIZE(bounds_3,1)
+      !ALLOCATE(bounds_t1(MAX(bs_1,bs_2), 2,ndims_tensor(tensor_1)))
+      !bounds_t1(:,:,:) = 0
+      !bounds_t1(1,1,:) = 1
+      !CALL dbcsr_t_get_info(tensor_1, nfull_total=bounds_t1(1,2, :))
+
+      !ALLOCATE(bounds_t2(MAX(bs_2, bs_3), 2,ndims_tensor(tensor_2)))
+      !bounds_t2(:,:,:) = 0
+      !bounds_t2(1,1, :) = 1
+      !CALL dbcsr_t_get_info(tensor_2, nfull_total=bounds_t2(1,2, :))
+
+      !IF (PRESENT(bounds_1)) THEN
+      !   bounds_t1(:,:, contract_1) = bounds_1(:,:,:)
+      !   do_crop(1) = .TRUE.
+      !   bounds_t2(:,:, contract_2) = bounds_1(:,:,:)
+      !   do_crop(2) = .TRUE.
+      !ENDIF
+
+      !IF (PRESENT(bounds_2)) THEN
+      !   bounds_t1(:,:, notcontract_1) = bounds_2(:,:,:)
+      !   do_crop(1) = .TRUE.
+      !ENDIF
+
+      !IF (PRESENT(bounds_3)) THEN
+      !   bounds_t2(:,:, notcontract_2) = bounds_3(:,:,:)
+      !   do_crop(2) = .TRUE.
+      !ENDIF
 
       IF (PRESENT(do_crop_1)) do_crop_1 = do_crop(1)
       IF (PRESENT(do_crop_2)) do_crop_2 = do_crop(2)
@@ -2012,7 +2291,7 @@ CONTAINS
 
    END SUBROUTINE
 
-   SUBROUTINE dbcsr_t_batched_contract_init(tensor, ${varlist("batch_range")}$)
+   SUBROUTINE dbcsr_t_batched_contract_init(tensor, nbatches, bounds)
       !! Initialize batched contraction for this tensor.
       !!
       !! Explanation: A batched contraction is a contraction performed in several consecutive steps by
@@ -2047,46 +2326,108 @@ CONTAINS
       !! and future contraction may profit from this optimization.
       !! @endnote
       TYPE(dbcsr_t_type), INTENT(INOUT) :: tensor
-      INTEGER, DIMENSION(:), OPTIONAL, INTENT(IN)        :: ${varlist("batch_range")}$
-         !! For internal load balancing optimizations, optionally specify the index ranges of
-         !! batched contraction.
-         !! batch_range_i refers to the ith tensor dimension and contains all block indices starting
-         !! a new range. The size should be the number of ranges plus one, the last element being the
-         !! block index plus one of the last block in the last range.
-      INTEGER, DIMENSION(ndims_tensor(tensor)) :: tdims
-      INTEGER, DIMENSION(:), ALLOCATABLE                 :: ${varlist("batch_range_prv")}$
-      LOGICAL :: static_range
+      INTEGER, DIMENSION(ndims_tensor(tensor)), INTENT(IN), OPTIONAL :: nbatches
+      !INTEGER, DIMENSION(:), OPTIONAL, INTENT(IN)        :: ${varlist("batch_range")}$
+      !   !! For internal load balancing optimizations, optionally specify the index ranges of
+      !   !! batched contraction.
+      !   !! batch_range_i refers to the ith tensor dimension and contains all block indices starting
+      !   !! a new range. The size should be the number of ranges plus one, the last element being the
+      !   !! block index plus one of the last block in the last range.
+      INTEGER, DIMENSION(2, ndims_tensor(tensor)), INTENT(IN), OPTIONAL :: bounds, block_bounds
+      INTEGER, DIMENSION(ndims_tensor(tensor)) :: tdims, nb
+      !INTEGER, DIMENSION(:), ALLOCATABLE                 :: ${varlist("batch_range_prv")}$
+      INTEGER, DIMENSION(2, ndims_tensor(tensor))  :: block_bounds
+      INTEGER, DIMENSION(:), ALLOCATABLE :: blk_size, blk_offset, batch_dist
+      INTEGER :: iblk, ibatch
+      TYPE(a2), DIMENSION(:), ALLOCATABLE :: batch_blks
+
+#:for idim in range(1, maxdim+1)
+      INTEGER, DIMENSION(dbcsr_t_nblks_total(tensor, ${idim}$)) :: blk_offset_${idim}$, blk_size_${idim}$
+#:endfor
 
       CALL dbcsr_t_get_info(tensor, nblks_total=tdims)
+      IF(PRESENT(nbatches)) THEN
+         nb = nbatches
+      ELSE
+         nb(:) = 1
+      ENDIF
 
-      static_range = .TRUE.
+      tensor%contraction_storage%static = MAXVAL(nb) > 1
+
+      ! find first and last block to consider
+      nblk = dbcsr_t_get_num_blocks(tensor)
+
 #:for idim in range(1, maxdim+1)
       IF (ndims_tensor(tensor) >= ${idim}$) THEN
-         IF (PRESENT(batch_range_${idim}$)) THEN
-            CALL allocate_any(batch_range_prv_${idim}$, source=batch_range_${idim}$)
-            static_range = .FALSE.
-         ELSE
-            ALLOCATE (batch_range_prv_${idim}$ (2))
-            batch_range_prv_${idim}$ (1) = 1
-            batch_range_prv_${idim}$ (2) = tdims(${idim}$) + 1
-         ENDIF
+
+         IF(ALLOCATED(blk_size)) DEALLOCATE(blk_size)
+         IF(ALLOCATED(blk_offset)) DEALLOCATE(blk_offset)
+         CALL get_ith_array(tensor%blk_sizes, ${idim}$, blk_size)
+         CALL get_ith_array(tensor%blk_offsets, ${idim}$, blk_offset)
+         DO iblk = 1, SIZE(blk_offset_${idim}$)
+            IF(blk_offset(iblk) - 1 + blk_size(iblk) >= bounds(1,${idim}$)) THEN
+               block_bounds(1, ${idim}$) = iblk
+               !block_offsets(1, ${idim}$) = bounds(1,${idim}$) - blk_offset_${idim}$(iblk)
+               EXIT
+            ENDIF
+         ENDDO
+         DO iblk = SIZE(blk_offset), 1, -1
+            IF(blk_offset(iblk) <= bounds(2,${idim}$)) THEN
+               block_bounds(2, ${idim}$) = iblk
+               EXIT
+            ENDIF
+         ENDDO
+      ENDIF
+#:endfor
+
+      ASSOCIATE (batch_blks => tensor%contraction_storage%batch_blks)
+         ALLOCATE (batch_blks(ndims_tensor(tensor)))
+
+         #:for idim in range(1, maxdim+1)
+            IF (ndims_tensor(tensor) >= ${idim}$) THEN
+               IF (ALLOCATED(blk_size)) DEALLOCATE (blk_size)
+               CALL get_ith_array(tensor%blk_sizes, ${idim}$, blk_size)
+               ALLOCATE (batch_dist(tdims(${idim}$)))
+               batch_dist(:) = -1
+               CALL dbcsr_t_default_distvec(tdims(${idim}$), nb(${idim}$), &
+                                            blk_size(block_bounds(1, ${idim}$):block_bounds(2, ${idim}$)), &
+                                            batch_dist(block_bounds(1, ${idim}$):block_bounds(2, ${idim}$)))
+               batch_dist = batch_dist + 1
+               ALLOCATE (nblk_batch(nb(${idim}$)))
+               nblk_batch(:) = 0
+               DO iblk_all = block_bounds(1, ${idim}$), block_bounds(2, ${idim}$)
+                  ibatch = batch_dist(iblk_all)
+                  nblk_batch(ibatch) = nblk_batch(ibatch) + 1
+               END DO
+               ALLOCATE (batch_blks(${idim}$)%a(nb(${idim}$)))
+               DO ibatch = 1, nb(${idim}$)
+                  ALLOCATE (batch_blks(${idim}$)%a(ibatch)%a(nblk_batch(ibatch))
+               END DO
+               nblk_batch(:) = 0
+               DO iblk_all = block_bounds(1, ${idim}$), block_bounds(2, ${idim}$)
+                  ibatch = batch_dist(iblk_all)
+                  nblk_batch(ibatch) = nblk_batch(ibatch) + 1
+                  iblk_batch = nblk_batch(ibatch)
+                  batch_blks(${idim}$)%a(ibatch)%a(iblk_batch) = iblk_all
+               END DO
+            END IF
+         #:endfor
+      END ASSOCIATE
+
+#:for ndim in range(1, maxdim+1)
+      IF (ndims_tensor(tensor) == ${ndim}$) THEN
+         CALL create_array_list(tensor%contraction_storage%batch_blks, ${ndim}$, ${varlist("batch_blks", nmax=ndim)}$)
       ENDIF
 #:endfor
 
       ALLOCATE (tensor%contraction_storage)
-      tensor%contraction_storage%static = static_range
-      IF (static_range) THEN
+      IF (tensor%contraction_storage%static) THEN
          CALL dbcsr_tas_batched_mm_init(tensor%matrix_rep)
       ENDIF
       tensor%contraction_storage%nsplit_avg = 0.0_real_8
       tensor%contraction_storage%ibatch = 0
 
-#:for ndim in range(1, maxdim+1)
-      IF (ndims_tensor(tensor) == ${ndim}$) THEN
-         CALL create_array_list(tensor%contraction_storage%batch_ranges, ${ndim}$, &
-                                ${varlist("batch_range_prv", nmax=ndim)}$)
-      ENDIF
-#:endfor
+      ALLOCATE(tensor%contraction_storage%nbatch(ndims_tensor(tensor)), SOURCE=nb)
 
    END SUBROUTINE
 

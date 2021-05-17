@@ -652,7 +652,7 @@ CONTAINS
       nbounds_dim(:) = nbounds
       DO idim = 1, ndims_tensor(tensor_in)
          fl = FINDLOC(bounds(:, 1, idim), 0, DIM=1) - 1
-         if(fl > -1) nbounds_dim(idim) = FINDLOC(bounds(:, 1, idim), 0, DIM=1) - 1
+         if(fl > -1) nbounds_dim(idim) = fl
       END DO
 
       blk_loop: DO iblk_all = 1, nblk

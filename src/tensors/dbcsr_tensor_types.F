@@ -100,7 +100,8 @@ MODULE dbcsr_tensor_types
       dbcsr_t_max_nblks_local, &
       dbcsr_t_default_distvec, &
       dbcsr_t_contraction_storage, &
-      dbcsr_t_copy_contraction_storage
+      dbcsr_t_copy_contraction_storage, &
+      a2
 
    TYPE dbcsr_t_pgrid_type
       TYPE(nd_to_2d_mapping)                  :: nd_index_grid
@@ -109,11 +110,21 @@ MODULE dbcsr_tensor_types
       INTEGER                                 :: nproc
    END TYPE
 
+   TYPE a1
+      INTEGER, DIMENSION(:), ALLOCATABLE :: a
+   END TYPE
+
+   TYPE a2
+      TYPE(a1), DIMENSION(:), ALLOCATABLE :: a
+   END TYPE
+
    TYPE dbcsr_t_contraction_storage
       REAL(real_8) :: nsplit_avg
-      INTEGER :: ibatch
       TYPE(array_list) :: batch_ranges
+      INTEGER :: ibatch
+      INTEGER, DIMENSION(:), ALLOCATABLE :: nbatch
       LOGICAL :: static
+      TYPE(a2) :: batch_blks
    END TYPE
 
    TYPE dbcsr_t_type
@@ -142,6 +153,8 @@ MODULE dbcsr_tensor_types
       ! lightweight reference counting for communicators:
       INTEGER, POINTER :: refcount => NULL()
    END TYPE
+
+
 
    ! tas matrix distribution function object for one matrix index
    TYPE, EXTENDS(dbcsr_tas_distribution) :: dbcsr_tas_dist_t
